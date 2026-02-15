@@ -96,15 +96,29 @@ CREATE TRIGGER after_invoice_item_insert
 AFTER INSERT ON invoice_items
 FOR EACH ROW
 BEGIN
+    DECLARE v_subtotal DECIMAL(10, 2);
+    DECLARE v_tax_rate DECIMAL(5, 2);
+    DECLARE v_tax_amount DECIMAL(10, 2);
+    DECLARE v_discount DECIMAL(10, 2);
+    DECLARE v_paid DECIMAL(10, 2);
+    DECLARE v_total DECIMAL(10, 2);
+    
+    SELECT IFNULL(SUM(line_total), 0) INTO v_subtotal
+    FROM invoice_items 
+    WHERE invoice_id = NEW.invoice_id;
+    
+    SELECT tax_rate, discount_amount, paid_amount INTO v_tax_rate, v_discount, v_paid
+    FROM invoices
+    WHERE invoice_id = NEW.invoice_id;
+    
+    SET v_tax_amount = v_subtotal * (v_tax_rate / 100);
+    SET v_total = v_subtotal + v_tax_amount - v_discount;
+    
     UPDATE invoices 
-    SET subtotal = (
-        SELECT IFNULL(SUM(line_total), 0) 
-        FROM invoice_items 
-        WHERE invoice_id = NEW.invoice_id
-    ),
-    tax_amount = subtotal * (tax_rate / 100),
-    total_amount = subtotal + tax_amount - discount_amount,
-    balance_due = subtotal + tax_amount - discount_amount - paid_amount
+    SET subtotal = v_subtotal,
+        tax_amount = v_tax_amount,
+        total_amount = v_total,
+        balance_due = v_total - v_paid
     WHERE invoice_id = NEW.invoice_id;
 END;//
 
@@ -112,15 +126,29 @@ CREATE TRIGGER after_invoice_item_update
 AFTER UPDATE ON invoice_items
 FOR EACH ROW
 BEGIN
+    DECLARE v_subtotal DECIMAL(10, 2);
+    DECLARE v_tax_rate DECIMAL(5, 2);
+    DECLARE v_tax_amount DECIMAL(10, 2);
+    DECLARE v_discount DECIMAL(10, 2);
+    DECLARE v_paid DECIMAL(10, 2);
+    DECLARE v_total DECIMAL(10, 2);
+    
+    SELECT IFNULL(SUM(line_total), 0) INTO v_subtotal
+    FROM invoice_items 
+    WHERE invoice_id = NEW.invoice_id;
+    
+    SELECT tax_rate, discount_amount, paid_amount INTO v_tax_rate, v_discount, v_paid
+    FROM invoices
+    WHERE invoice_id = NEW.invoice_id;
+    
+    SET v_tax_amount = v_subtotal * (v_tax_rate / 100);
+    SET v_total = v_subtotal + v_tax_amount - v_discount;
+    
     UPDATE invoices 
-    SET subtotal = (
-        SELECT IFNULL(SUM(line_total), 0) 
-        FROM invoice_items 
-        WHERE invoice_id = NEW.invoice_id
-    ),
-    tax_amount = subtotal * (tax_rate / 100),
-    total_amount = subtotal + tax_amount - discount_amount,
-    balance_due = subtotal + tax_amount - discount_amount - paid_amount
+    SET subtotal = v_subtotal,
+        tax_amount = v_tax_amount,
+        total_amount = v_total,
+        balance_due = v_total - v_paid
     WHERE invoice_id = NEW.invoice_id;
 END;//
 
@@ -128,15 +156,29 @@ CREATE TRIGGER after_invoice_item_delete
 AFTER DELETE ON invoice_items
 FOR EACH ROW
 BEGIN
+    DECLARE v_subtotal DECIMAL(10, 2);
+    DECLARE v_tax_rate DECIMAL(5, 2);
+    DECLARE v_tax_amount DECIMAL(10, 2);
+    DECLARE v_discount DECIMAL(10, 2);
+    DECLARE v_paid DECIMAL(10, 2);
+    DECLARE v_total DECIMAL(10, 2);
+    
+    SELECT IFNULL(SUM(line_total), 0) INTO v_subtotal
+    FROM invoice_items 
+    WHERE invoice_id = OLD.invoice_id;
+    
+    SELECT tax_rate, discount_amount, paid_amount INTO v_tax_rate, v_discount, v_paid
+    FROM invoices
+    WHERE invoice_id = OLD.invoice_id;
+    
+    SET v_tax_amount = v_subtotal * (v_tax_rate / 100);
+    SET v_total = v_subtotal + v_tax_amount - v_discount;
+    
     UPDATE invoices 
-    SET subtotal = (
-        SELECT IFNULL(SUM(line_total), 0) 
-        FROM invoice_items 
-        WHERE invoice_id = OLD.invoice_id
-    ),
-    tax_amount = subtotal * (tax_rate / 100),
-    total_amount = subtotal + tax_amount - discount_amount,
-    balance_due = subtotal + tax_amount - discount_amount - paid_amount
+    SET subtotal = v_subtotal,
+        tax_amount = v_tax_amount,
+        total_amount = v_total,
+        balance_due = v_total - v_paid
     WHERE invoice_id = OLD.invoice_id;
 END;//
 
@@ -144,17 +186,27 @@ CREATE TRIGGER after_payment_insert
 AFTER INSERT ON payments
 FOR EACH ROW
 BEGIN
+    DECLARE v_paid_amount DECIMAL(10, 2);
+    DECLARE v_total_amount DECIMAL(10, 2);
+    DECLARE v_balance_due DECIMAL(10, 2);
+    
+    SELECT IFNULL(SUM(amount), 0) INTO v_paid_amount
+    FROM payments 
+    WHERE invoice_id = NEW.invoice_id;
+    
+    SELECT total_amount INTO v_total_amount
+    FROM invoices
+    WHERE invoice_id = NEW.invoice_id;
+    
+    SET v_balance_due = v_total_amount - v_paid_amount;
+    
     UPDATE invoices 
-    SET paid_amount = (
-        SELECT IFNULL(SUM(amount), 0) 
-        FROM payments 
-        WHERE invoice_id = NEW.invoice_id
-    ),
-    balance_due = total_amount - paid_amount,
-    status = CASE 
-        WHEN total_amount - paid_amount <= 0 THEN 'paid'
-        ELSE status
-    END
+    SET paid_amount = v_paid_amount,
+        balance_due = v_balance_due,
+        status = CASE 
+            WHEN v_balance_due <= 0 THEN 'paid'
+            ELSE status
+        END
     WHERE invoice_id = NEW.invoice_id;
 END;//
 
@@ -162,17 +214,27 @@ CREATE TRIGGER after_payment_update
 AFTER UPDATE ON payments
 FOR EACH ROW
 BEGIN
+    DECLARE v_paid_amount DECIMAL(10, 2);
+    DECLARE v_total_amount DECIMAL(10, 2);
+    DECLARE v_balance_due DECIMAL(10, 2);
+    
+    SELECT IFNULL(SUM(amount), 0) INTO v_paid_amount
+    FROM payments 
+    WHERE invoice_id = NEW.invoice_id;
+    
+    SELECT total_amount INTO v_total_amount
+    FROM invoices
+    WHERE invoice_id = NEW.invoice_id;
+    
+    SET v_balance_due = v_total_amount - v_paid_amount;
+    
     UPDATE invoices 
-    SET paid_amount = (
-        SELECT IFNULL(SUM(amount), 0) 
-        FROM payments 
-        WHERE invoice_id = NEW.invoice_id
-    ),
-    balance_due = total_amount - paid_amount,
-    status = CASE 
-        WHEN total_amount - paid_amount <= 0 THEN 'paid'
-        ELSE status
-    END
+    SET paid_amount = v_paid_amount,
+        balance_due = v_balance_due,
+        status = CASE 
+            WHEN v_balance_due <= 0 THEN 'paid'
+            ELSE status
+        END
     WHERE invoice_id = NEW.invoice_id;
 END;//
 
@@ -180,13 +242,23 @@ CREATE TRIGGER after_payment_delete
 AFTER DELETE ON payments
 FOR EACH ROW
 BEGIN
+    DECLARE v_paid_amount DECIMAL(10, 2);
+    DECLARE v_total_amount DECIMAL(10, 2);
+    DECLARE v_balance_due DECIMAL(10, 2);
+    
+    SELECT IFNULL(SUM(amount), 0) INTO v_paid_amount
+    FROM payments 
+    WHERE invoice_id = OLD.invoice_id;
+    
+    SELECT total_amount INTO v_total_amount
+    FROM invoices
+    WHERE invoice_id = OLD.invoice_id;
+    
+    SET v_balance_due = v_total_amount - v_paid_amount;
+    
     UPDATE invoices 
-    SET paid_amount = (
-        SELECT IFNULL(SUM(amount), 0) 
-        FROM payments 
-        WHERE invoice_id = OLD.invoice_id
-    ),
-    balance_due = total_amount - paid_amount
+    SET paid_amount = v_paid_amount,
+        balance_due = v_balance_due
     WHERE invoice_id = OLD.invoice_id;
 END;//
 
